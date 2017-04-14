@@ -2,14 +2,13 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <limits.h>
 #include <signal.h>
 #include <fts.h>
 #include <shout/shout.h>
 #include <libavformat/avformat.h>
 #include <libavutil/dict.h>
-
-#include <unistd.h>
 
 shout_t *shout;
 shout_metadata_t *meta;
@@ -89,6 +88,18 @@ die(const char *fmt, ...)
 
 	exit(1);
 }
+void
+reconnect(shout_t *shout)
+{
+	int i;
+
+	fprintf(stderr,"Disconnected, trying to reconnect...\n");
+	
+	for(i=0; i>=3; i++)
+		if(shout_open(shout) == SHOUTERR_SUCCESS) return;
+
+	die("Connection failed after 3 retries");
+}
 
 void
 sigterm(int sig)
@@ -136,15 +147,15 @@ main(int argc, char *argv[])
 
 	while(1)
 	{
-		
+
 		if (parent == NULL)
 		{
 			if (access(traverse_path[0], R_OK) < 0) die("No such file or directory"); 
 			if (file_system != NULL) fts_close(file_system);
-				file_system = fts_open(traverse_path, FTS_COMFOLLOW | FTS_NOCHDIR, &compare);
+			file_system = fts_open(traverse_path, FTS_COMFOLLOW | FTS_NOCHDIR, &compare);
 			parent = fts_read(file_system);
 		}
-		
+
 		for(child = fts_children(file_system,0);
 		    child != NULL; child = child->fts_link)
 		{
@@ -156,7 +167,11 @@ main(int argc, char *argv[])
 
 			extract_meta(meta,track_path);
 			shout_set_metadata(shout, meta);
-			play_file(shout,track_path);
+			if(play_file(shout,track_path) < 0)
+				fprintf(stderr, "Failed to play %s\n", track_path);
+
+			if(shout_get_errno(shout) == SHOUTERR_UNCONNECTED)
+				reconnect(shout);
 		}
 
 		parent = fts_read(file_system);
