@@ -9,6 +9,8 @@
 #include <libavformat/avformat.h>
 #include <libavutil/dict.h>
 
+#include <unistd.h>
+
 shout_t *shout;
 shout_metadata_t *meta;
 
@@ -117,7 +119,7 @@ main(int argc, char *argv[])
 	sigact.sa_flags = 0;
 	sigaction(SIGTERM, &sigact, (struct sigaction *)NULL);
 	sigaction(SIGINT, &sigact, (struct sigaction *)NULL);
-	
+
 	shout_init();
 	shout = shout_new();
 	meta = shout_metadata_new();
@@ -134,25 +136,29 @@ main(int argc, char *argv[])
 
 	while(1)
 	{
-		file_system = fts_open(traverse_path,FTS_COMFOLLOW | FTS_NOCHDIR,&compare);
-		if (file_system == NULL) die("No such file or directory");
-
-		while( (parent = fts_read(file_system)) != NULL)
+		
+		if (parent == NULL)
 		{
-			child = fts_children(file_system,0);
-			while ((NULL != child) && (NULL != child->fts_link))
-			{
-				child = child->fts_link;
-				dot = strrchr((child->fts_name), '.');
-
-				if (!(dot && !strcasecmp(dot, ".mp3"))) continue;
-				memset(track_path, 0, sizeof(track_path));
-				sprintf(track_path,"%s/%s",child->fts_path,child->fts_name);
-				extract_meta(meta,track_path);
-				shout_set_metadata(shout, meta);
-				play_file(shout,track_path);
-			}
+			if (access(traverse_path[0], R_OK) < 0) die("No such file or directory"); 
+			if (file_system != NULL) fts_close(file_system);
+				file_system = fts_open(traverse_path, FTS_COMFOLLOW | FTS_NOCHDIR, &compare);
+			parent = fts_read(file_system);
 		}
-		fts_close(file_system);
+		
+		for(child = fts_children(file_system,0);
+		    child != NULL; child = child->fts_link)
+		{
+			dot = strrchr((child->fts_name), '.');
+			if (!(dot && !strcasecmp(dot, ".mp3"))) continue;
+
+			memset(track_path, 0, sizeof(track_path));
+			sprintf(track_path,"%s/%s",child->fts_path,child->fts_name);
+
+			extract_meta(meta,track_path);
+			shout_set_metadata(shout, meta);
+			play_file(shout,track_path);
+		}
+
+		parent = fts_read(file_system);
 	}
 }
