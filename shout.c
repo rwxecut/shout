@@ -11,6 +11,16 @@
 #include <libavformat/avformat.h>
 #include <libavutil/dict.h>
 
+#define HOST "127.0.0.1"
+#define PORT 8080
+
+#define USER "source"
+#define PASS "hackme"
+
+#define FORMAT SHOUT_FORMAT_MP3
+//SHOUT_FORMAT_VORBIS SHOUT_FORMAT_MP3
+#define EXT ".mp3"
+
 shout_t *shout;
 shout_metadata_t *meta;
 
@@ -47,31 +57,20 @@ extract_meta(shout_metadata_t *meta, char *path)
 int
 play_file(shout_t *shout, char *path)
 {
-	long read, total, ret;
-	char buff[4096];
+	int ret;
+	long r;
+	unsigned char buf[4096];
 	FILE *track;
 
 	track = fopen(path, "rb");
-	total = 0;
-	while (1)
+	while (r = fread(buf, 1, sizeof(buf), track))
 	{
-		read = fread(buff, 1, sizeof(buff), track);
-		total += read;
-		if (read > 0)
-		{
-			ret = shout_send(shout, buff, read);
-			if (ret != SHOUTERR_SUCCESS)
-			{
-				fclose(track);
-				return -1;
-			}
-		}
-		else
+		if ((ret = shout_send(shout, buf, r)) != SHOUTERR_SUCCESS)
 			break;
 	shout_sync(shout);
 	}
 	fclose(track);
-	return 0;
+	return ret;
 }
 
 void
@@ -98,6 +97,8 @@ reconnect(shout_t *shout)
 {
 	int i;
 
+	shout_close(shout);
+
 	fprintf(stderr,"Disconnected, trying to reconnect...\n");
 	
 	for(i=0; i>=3; i++)
@@ -119,6 +120,7 @@ sigterm(int sig)
 int
 main(int argc, char *argv[])
 {
+	int shouterr;
 	char track_path[PATH_MAX];
 	char *traverse_path[] = {argv[2], NULL};
 	char *dot;
@@ -139,12 +141,12 @@ main(int argc, char *argv[])
 	shout_init();
 	shout = shout_new();
 	meta = shout_metadata_new();
-	shout_set_host(shout, "127.0.0.1");
-	shout_set_port(shout, 8000);
+	shout_set_host(shout, HOST);
+	shout_set_port(shout, PORT);
 	shout_set_protocol(shout, SHOUT_PROTOCOL_HTTP);
-	shout_set_user(shout, "source");
-	shout_set_password(shout, "hackme");
-	shout_set_format(shout, SHOUT_FORMAT_MP3);
+	shout_set_user(shout, USER);
+	shout_set_password(shout, PASS);
+	shout_set_format(shout, FORMAT);
 	shout_set_mount(shout, argv[1]);
 
 	if (shout_open(shout) != SHOUTERR_SUCCESS)
@@ -165,18 +167,22 @@ main(int argc, char *argv[])
 		    child != NULL; child = child->fts_link)
 		{
 			dot = strrchr((child->fts_name), '.');
-			if (!(dot && !strcasecmp(dot, ".mp3"))) continue;
+			if (!(dot && !strcasecmp(dot, EXT))) continue;
 
 			memset(track_path, 0, sizeof(track_path));
 			sprintf(track_path,"%s/%s",child->fts_path,child->fts_name);
 
 			extract_meta(meta,track_path);
 			shout_set_metadata(shout, meta);
-			if(play_file(shout,track_path) < 0)
+			
+			shouterr = play_file(shout,track_path);
+			if ((shouterr == SHOUTERR_UNCONNECTED) ||
+			    (shouterr == SHOUTERR_SOCKET))
+			{
 				fprintf(stderr, "Failed to play %s\n", track_path);
-
-			if(shout_get_errno(shout) == SHOUTERR_UNCONNECTED)
 				reconnect(shout);
+				fprintf(stderr, "OK\n");
+			}
 		}
 
 		parent = fts_read(file_system);
