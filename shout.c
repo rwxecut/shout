@@ -62,7 +62,7 @@ play_file(shout_t *shout, char *path)
 	{
 		if ((ret = shout_send(shout, buf, r)) != SHOUTERR_SUCCESS)
 			break;
-	shout_sync(shout);
+		shout_sync(shout);
 	}
 	fclose(track);
 	return ret;
@@ -96,8 +96,11 @@ reconnect(shout_t *shout)
 
 	fprintf(stderr,"Disconnected, trying to reconnect...\n");
 	
-	for(i=0; i>=3; i++)
+	for(i=0; i<3; i++)
+	{
 		if(shout_open(shout) == SHOUTERR_SUCCESS) return;
+		sleep(2);
+	}
 
 	die("Connection failed after 3 retries");
 }
