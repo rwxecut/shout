@@ -6,8 +6,11 @@
 #include <signal.h>
 #include <fts.h>
 #include <shout/shout.h>
+#include <libavformat/avformat.h>
+#include <libavutil/dict.h>
 
 shout_t *shout;
+shout_metadata_t *meta;
 
 int
 compare(const FTSENT** one, const FTSENT** two)
@@ -16,7 +19,27 @@ compare(const FTSENT** one, const FTSENT** two)
 }
 
 int
-shout_playfile(shout_t *shout, char *path)
+extract_meta(shout_metadata_t *meta, char *path)
+{
+	int ret;
+	AVFormatContext *fmt_ctx = NULL;
+	AVDictionaryEntry *tag = NULL;
+	
+	av_register_all();
+	av_log_set_level(AV_LOG_QUIET);
+	
+	if((ret = avformat_open_input(&fmt_ctx, path, NULL, NULL)))
+		return ret;
+
+	while ((tag = av_dict_get(fmt_ctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
+		shout_metadata_add(meta,tag->key,tag->value);
+	
+	avformat_close_input(&fmt_ctx);
+	return 0;
+}
+
+int
+play_file(shout_t *shout, char *path)
 {
 	long read, total, ret;
 	char buff[4096];
@@ -38,9 +61,7 @@ shout_playfile(shout_t *shout, char *path)
 			}
 		}
 		else
-		{
 			break;
-		}
 	shout_sync(shout);
 	}
 	fclose(track);
@@ -62,9 +83,7 @@ die(const char *fmt, ...)
 		perror(NULL);
 	}
 	else
-	{
 		fputc('\n', stderr);
-	}
 
 	exit(1);
 }
@@ -73,6 +92,7 @@ void
 sigterm(int sig)
 {
 	fprintf(stderr, "Exit gracefully\n");
+	shout_metadata_free(meta);
 	shout_close(shout);
 	shout_shutdown();
 	exit(0);
@@ -96,9 +116,11 @@ main(int argc, char *argv[])
 	sigemptyset(&sigact.sa_mask);
 	sigact.sa_flags = 0;
 	sigaction(SIGTERM, &sigact, (struct sigaction *)NULL);
+	sigaction(SIGINT, &sigact, (struct sigaction *)NULL);
 	
 	shout_init();
 	shout = shout_new();
+	meta = shout_metadata_new();
 	shout_set_host(shout, "127.0.0.1");
 	shout_set_port(shout, 8000);
 	shout_set_protocol(shout, SHOUT_PROTOCOL_HTTP);
@@ -126,7 +148,9 @@ main(int argc, char *argv[])
 				if (!(dot && !strcasecmp(dot, ".mp3"))) continue;
 				memset(track_path, 0, sizeof(track_path));
 				sprintf(track_path,"%s/%s",child->fts_path,child->fts_name);
-				shout_playfile(shout,track_path);
+				extract_meta(meta,track_path);
+				shout_set_metadata(shout, meta);
+				play_file(shout,track_path);
 			}
 		}
 		fts_close(file_system);
