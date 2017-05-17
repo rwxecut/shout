@@ -6,6 +6,7 @@
 #include <limits.h>
 #include <signal.h>
 #include <fts.h>
+#include <sys/stat.h>
 #include <shout/shout.h>
 #include <libavformat/avformat.h>
 #include <libavutil/dict.h>
@@ -16,7 +17,11 @@ shout_metadata_t *meta;
 int
 compare(const FTSENT** one, const FTSENT** two)
 {
-    return (strcmp((*one)->fts_name, (*two)->fts_name));
+	if(S_ISDIR((*one)->fts_statp->st_mode) &&
+	   S_ISDIR((*two)->fts_statp->st_mode))
+		return(rand());
+
+	return (strcmp((*one)->fts_name, (*two)->fts_name));
 }
 
 int
