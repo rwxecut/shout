@@ -1,3 +1,6 @@
+/* gcc shout.c -o shout -lavutils 
+-lavformat -lshout */
+
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -16,8 +19,10 @@
 #define USER "source"
 #define PASS "hackme"
 
+/* Could be SHOUT_FORMAT_VORBIS or 
+SHOUT_FORMAT_MP3 */
 #define FORMAT SHOUT_FORMAT_MP3
-//SHOUT_FORMAT_VORBIS SHOUT_FORMAT_MP3
+/* Could be .mp3 or .ogg */
 #define EXT ".mp3"
 
 shout_t *shout;
@@ -35,16 +40,16 @@ extract_meta(shout_metadata_t *meta, char *path)
 	int ret;
 	AVFormatContext *fmt_ctx = NULL;
 	AVDictionaryEntry *tag = NULL;
-	
+
 	av_register_all();
 	av_log_set_level(AV_LOG_QUIET);
-	
+
 	if((ret = avformat_open_input(&fmt_ctx, path, NULL, NULL)))
 		return ret;
 
 	while ((tag = av_dict_get(fmt_ctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
 		shout_metadata_add(meta,tag->key,tag->value);
-	
+
 	avformat_close_input(&fmt_ctx);
 	return 0;
 }
@@ -95,7 +100,7 @@ reconnect(shout_t *shout)
 	shout_close(shout);
 
 	fprintf(stderr,"Disconnected, trying to reconnect...\n");
-	
+
 	for(i=0; i<3; i++)
 	{
 		if(shout_open(shout) == SHOUTERR_SUCCESS) return;
@@ -129,13 +134,15 @@ main(int argc, char *argv[])
 
 	if (argc != 3)
 		die("usage: shout <mount> <dir>");
-	
+
+	/* set signal handlers */
 	sigact.sa_handler = sigterm;
 	sigemptyset(&sigact.sa_mask);
 	sigact.sa_flags = 0;
 	sigaction(SIGTERM, &sigact, (struct sigaction *)NULL);
 	sigaction(SIGINT, &sigact, (struct sigaction *)NULL);
 
+	/* initialize shout */
 	shout_init();
 	shout = shout_new();
 	meta = shout_metadata_new();
@@ -150,9 +157,12 @@ main(int argc, char *argv[])
 	if (shout_open(shout) != SHOUTERR_SUCCESS)
 		die("Failed to connect");
 
+	/* enter main loop */
 	while(1)
 	{
 
+		/* if parent NULL reopen 
+tree or die */
 		if (parent == NULL)
 		{
 			if (access(traverse_path[0], R_OK) < 0) die("No such file or directory"); 
